@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Passagem;
+use App\Models\Poltrona;
+use App\Models\Onibus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -39,8 +41,11 @@ class PassagemController extends Controller
 
         $user = Auth::user();
         $empresaNome = $user->US_NOME;
+        $empresaId = $user->id;
         $query = Passagem::query();
+        $queryOnibus = Onibus::query();
         $query->where('PAS_EMPRESA', $empresaNome);
+        $queryOnibus->where('ON_EMPRESA_ID', $user->id);
 
         if ($request->has('date_from') && $request->get('date_from')) {
             $query->where('PAS_DIAIDA', '>=', $request->get('date_from'));
@@ -54,12 +59,16 @@ class PassagemController extends Controller
 
         $passagens = $query->paginate($perPage);
 
+        $onibus = $queryOnibus->paginate($perPage);
+
         return view('vender-passagem', [
             'passagens' => $passagens,
+            'onibus' => $onibus,
             'currentPage' => $passagens->currentPage(),
             'total' => $passagens->total(),
             'perPage' => $perPage,
-            'empresaNome' => $empresaNome
+            'empresaNome' => $empresaNome,
+            'empresaId' => $empresaId
         ]);
     }
 
@@ -70,6 +79,7 @@ class PassagemController extends Controller
 
     public function store(Request $request)
     {
+
         $request->validate([
             'PAS_ESTADOIDA' => 'required|string',
             'PAS_CIDADEIDA' => 'required|string',
@@ -81,6 +91,7 @@ class PassagemController extends Controller
             'PAS_DIAVOLTA' => 'nullable|date',
             'PAS_PRECO' => 'required|string',
             'PAS_EMPRESA' => 'required|string',
+            'PAS_ONIBUS_ID' => 'required|exists:ONIBUS,id'
         ]);
 
         $data = $request->all();
@@ -91,7 +102,9 @@ class PassagemController extends Controller
         $user = Auth::user();
         $empresaNome = $user->US_NOME;
         $query = Passagem::query();
+        $queryOnibus = Onibus::query();
         $query->where('PAS_EMPRESA', $empresaNome);
+        $queryOnibus->where('ON_EMPRESA_ID', $user->id);
 
         if ($request->has('date_from') && $request->get('date_from')) {
             $query->where('PAS_DIAIDA', '>=', $request->get('date_from'));
@@ -105,33 +118,45 @@ class PassagemController extends Controller
 
         $passagens = $query->paginate($perPage);
 
+        $onibus = $queryOnibus->paginate($perPage);
+
         return view('vender-passagem', [
             'passagens' => $passagens,
+            'onibus' => $onibus,
             'currentPage' => $passagens->currentPage(),
             'total' => $passagens->total(),
             'perPage' => $perPage,
-            'empresaNome' => $empresaNome
+            'empresaNome' => $empresaNome,
+            'empresaId' => $user->id
         ])->with('success', 'Passagem adicionada com sucesso!');
 
         // return view('vender-passagem')->with('success', 'Passagem adicionada com sucesso!');
     }
 
+    // public function update(Request $request, Passagem $passagem)
+    // {
+    //     $passagem->update($request->all());
+    //     return redirect()->route('passagens.index')->with('success', 'Passagem atualizada com sucesso!');
+    // }
 
-
-    public function show(Passagem $passagem)
+    public function update(Request $request, $id)
     {
-        return view('passagens.show', compact('passagem'));
-    }
+        $request->validate([
+            'PAS_ESTADOIDA' => 'required|string',
+            'PAS_CIDADEIDA' => 'required|string',
+            'PAS_ESTADOVOLTA' => 'nullable|string',
+            'PAS_CIDADEVOLTA' => 'nullable|string',
+            'PAS_HORASIDA' => 'required|string',
+            'PAS_HORASVOLTA' => 'nullable|string',
+            'PAS_DIAIDA' => 'required|date',
+            'PAS_DIAVOLTA' => 'nullable|date',
+            'PAS_PRECO' => 'required|string',
+        ]);
 
-    public function edit(Passagem $passagem)
-    {
-        return view('passagens.edit', compact('passagem'));
-    }
-
-    public function update(Request $request, Passagem $passagem)
-    {
+        $passagem = Passagem::findOrFail($id);
         $passagem->update($request->all());
-        return redirect()->route('passagens.index')->with('success', 'Passagem atualizada com sucesso!');
+
+        return redirect()->route('vender-passagem')->with('success', 'Passagem atualizada com sucesso!');
     }
 
     public function destroy($id)
@@ -141,28 +166,20 @@ class PassagemController extends Controller
 
         $user = Auth::user();
         $empresaNome = $user->US_NOME;
+
         $query = Passagem::query();
         $query->where('PAS_EMPRESA', $empresaNome);
-
         $perPage = 10;
-
         $passagens = $query->paginate($perPage);
 
-        return view('vender-passagem', [
+        return redirect()->route('vender-passagem')->with([
             'passagens' => $passagens,
             'currentPage' => $passagens->currentPage(),
             'total' => $passagens->total(),
             'perPage' => $perPage,
             'empresaNome' => $empresaNome,
-        ])->with('success', 'Passagem apagada com sucesso!');
-    }
-
-    public function comprar(Request $request)
-    {
-    }
-
-    public function adicionar(Request $request)
-    {
+            'success' => 'Passagem apagada com sucesso!'
+        ]);
     }
 
     public function salvarPassagem(Request $request)
@@ -194,13 +211,20 @@ class PassagemController extends Controller
         ]);
     }
 
-    public function goToCart(Request $request) {
+    public function goToCart(Request $request)
+    {
         $passagemId = $request->query('id');
 
         $passagem = Passagem::find($passagemId);
 
+        $poltronas = Poltrona::query()
+            ->where('POL_DISPONIVEL', true)
+            ->where('POL_ONIBUSID', $passagem->PAS_ONIBUS_ID)
+            ->get();
+
         return view('buy-ticket', [
-            'passagem' => $passagem
+            'passagem' => $passagem,
+            'poltronas' => $poltronas,
         ])->with('success', 'Passagem adicionada com sucesso!');
     }
 }
